@@ -139,7 +139,7 @@ public class BPlusTree {
         // TODO(proj2): implement
         // TODO(proj4_part3): B+ tree locking
 
-        return Optional.empty();
+        return root.get(key).getKey(key);
     }
 
     /**
@@ -191,8 +191,32 @@ public class BPlusTree {
     public Iterator<RecordId> scanAll() {
         // TODO(proj2): Return a BPlusTreeIterator.
         // TODO(proj4_part3): B+ tree locking
+        return new Iterator<RecordId>(){
 
-        return Collections.emptyIterator();
+            LeafNode curLeaf = root.getLeftmostLeaf();
+            Iterator<RecordId> curIt = curLeaf.scanAll();
+
+            @Override
+            public boolean hasNext() {
+                if(curIt.hasNext()){
+                    return true;
+                }
+                if(curLeaf.getRightSibling().isEmpty()){
+                    return false;
+                }else {
+                    curLeaf = curLeaf.getRightSibling().get();
+                    curIt = curLeaf.scanAll();
+                    return hasNext();
+                }
+            }
+
+
+            @Override
+            public RecordId next() {
+                return curIt.next();
+            }
+        };
+
     }
 
     /**
@@ -223,7 +247,31 @@ public class BPlusTree {
         // TODO(proj2): Return a BPlusTreeIterator.
         // TODO(proj4_part3): B+ tree locking
 
-        return Collections.emptyIterator();
+        return new Iterator<RecordId>(){
+
+            LeafNode curLeaf = root.get(key);
+            Iterator<RecordId> curIt = curLeaf.scanGreaterEqual(key);
+
+            @Override
+            public boolean hasNext() {
+                if(curIt.hasNext()){
+                    return true;
+                }
+                if(curLeaf.getRightSibling().isEmpty()){
+                    return false;
+                }else {
+                    curLeaf = curLeaf.getRightSibling().get();
+                    curIt = curLeaf.scanAll();
+                    return hasNext();
+                }
+            }
+
+
+            @Override
+            public RecordId next() {
+                return curIt.next();
+            }
+        };
     }
 
     /**
@@ -238,6 +286,17 @@ public class BPlusTree {
     public void put(DataBox key, RecordId rid) {
         typecheck(key);
         // TODO(proj2): implement
+        Optional<Pair<DataBox, Long>> ret = root.put(key,rid);
+        if(!ret.isEmpty()){
+            InnerNode newRoot = new InnerNode(
+                    metadata,
+                    bufferManager,
+                    Arrays.asList(ret.get().getFirst()),
+                    Arrays.asList(root.getPage().getPageNum(),ret.get().getSecond()),
+                    lockContext);
+            updateRoot(newRoot);
+
+        }
         // TODO(proj4_part3): B+ tree locking
 
         return;
@@ -262,6 +321,23 @@ public class BPlusTree {
      */
     public void bulkLoad(Iterator<Pair<DataBox, RecordId>> data, float fillFactor) {
         // TODO(proj2): implement
+        if(root instanceof LeafNode && ((LeafNode) root).getKeys().size() > 0
+                || root instanceof InnerNode
+        ){
+            throw new BPlusTreeException("BPlusTree is not empty when bulkLoad");
+        }
+        while (data.hasNext()){
+            Optional<Pair<DataBox, Long>> ret = root.bulkLoad(data,fillFactor);
+            if(!ret.isEmpty()){
+                InnerNode newRoot = new InnerNode(
+                        metadata,
+                        bufferManager,
+                        Arrays.asList(ret.get().getFirst()),
+                        Arrays.asList(root.getPage().getPageNum(),ret.get().getSecond()),
+                        lockContext);
+                updateRoot(newRoot);
+            }
+        }
         // TODO(proj4_part3): B+ tree locking
 
         return;
@@ -281,6 +357,7 @@ public class BPlusTree {
     public void remove(DataBox key) {
         typecheck(key);
         // TODO(proj2): implement
+        root.remove(key);
         // TODO(proj4_part3): B+ tree locking
 
         return;

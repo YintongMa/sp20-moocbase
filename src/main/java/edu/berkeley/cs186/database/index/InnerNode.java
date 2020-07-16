@@ -79,8 +79,23 @@ class InnerNode extends BPlusNode {
     @Override
     public LeafNode get(DataBox key) {
         // TODO(proj2): implement
-
-        return null;
+        //TODO binary search
+        BPlusNode node = null;
+        for(int i = 0;i<keys.size();i++){
+            int flag = key.compareTo(keys.get(i));
+            if(flag < 0){
+                node = getChild(i);
+                break;
+            }
+        }
+        if(node == null){
+            node = getChild(children.size()-1);
+        }
+        if(node instanceof InnerNode){
+            return ((InnerNode)node).get(key);
+        }else{
+            return (LeafNode)node;
+        }
     }
 
     // See BPlusNode.getLeftmostLeaf.
@@ -89,7 +104,7 @@ class InnerNode extends BPlusNode {
         assert(children.size() > 0);
         // TODO(proj2): implement
 
-        return null;
+        return getChild(0).getLeftmostLeaf();
     }
 
     // See BPlusNode.put.
@@ -97,7 +112,72 @@ class InnerNode extends BPlusNode {
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
         // TODO(proj2): implement
 
-        return Optional.empty();
+        /**
+         * n.put(k, r) inserts the pair (k, r) into the subtree rooted by n. There
+         * are two cases to consider:
+         *
+         *   Case 1: If inserting the pair (k, r) does NOT cause n to overflow, then
+         *           Optional.empty() is returned.
+         *   Case 2: If inserting the pair (k, r) does cause the node n to overflow,
+         *           then n is split into a left and right node (described more
+         *           below) and a pair (split_key, right_node_page_num) is returned
+         *           where right_node_page_num is the page number of the newly
+         *           created right node, and the value of split_key depends on
+         *           whether n is an inner node or a leaf node (described more below).
+         *
+         *
+         *                               inner
+         *                               0      1
+         *                               +----+----+----+----+
+         *                               | 10 | 20 |    |    |
+         *                               +----+----+----+----+
+         *                              /     |     \
+         *                         ____/      |      \____
+         *                        /           |           \
+         *   +----+----+----+----+  +----+----+----+----+  +----+----+----+----+
+         *   |  1 |  2 |  3 |  4 |->| 11 | 12 | 13 |    |->| 21 | 22 | 23 |    |
+         *   +----+----+----+----+  +----+----+----+----+  +----+----+----+----+
+         *   leaf0                  leaf1                  leaf2
+         */
+        //TODO binary search
+        BPlusNode node = null;
+        int index = 0;
+        for(int i = 0;i<keys.size();i++){
+            int flag = key.compareTo(keys.get(i));
+            if(flag < 0){
+                node = getChild(i);
+                index = i;
+                break;
+            }
+        }
+        if(node == null){
+            node = getChild(children.size()-1);
+            index = children.size()-1;
+        }
+        Optional<Pair<DataBox, Long>> ret = node.put(key,rid);
+        if(ret.isEmpty()){
+            return Optional.empty();
+        }
+
+        int prevKeysNum = keys.size();
+        keys.add(index,ret.get().getFirst());
+        children.add(index+1,ret.get().getSecond());
+        if(prevKeysNum < metadata.getOrder()*2){
+            sync();
+            return Optional.empty();
+        }else {
+            DataBox splitKey = keys.get(keys.size()/2);
+            List<DataBox> leftKeys = keys.subList(0,keys.size()/2);
+            List<DataBox> rightKeys = keys.subList(keys.size()/2+1,keys.size());
+            List<Long> leftChildren = children.subList(0,keys.size()/2+1);
+            List<Long> rightChildren = children.subList(keys.size()/2+1,children.size());
+            InnerNode rightInnerNode = new InnerNode(metadata,bufferManager,rightKeys,rightChildren,treeContext);
+            keys = leftKeys;
+            children = leftChildren;
+            sync();
+            return Optional.of(new Pair<>(splitKey,rightInnerNode.page.getPageNum()));
+        }
+
     }
 
     // See BPlusNode.bulkLoad.
@@ -105,8 +185,37 @@ class InnerNode extends BPlusNode {
     public Optional<Pair<DataBox, Long>> bulkLoad(Iterator<Pair<DataBox, RecordId>> data,
             float fillFactor) {
         // TODO(proj2): implement
+        while (data.hasNext()){
+            Optional<Pair<DataBox, Long>> ret = getChild(children.size()-1).bulkLoad(data,fillFactor);
+            if(!ret.isEmpty()){
 
+                int prevKeysNum = keys.size();
+                keys.add(ret.get().getFirst());
+                children.add(ret.get().getSecond());
+                if(prevKeysNum < metadata.getOrder()*2){
+//                    sync();
+//                    return Optional.empty();
+                }else {
+                    DataBox splitKey = keys.get(keys.size()/2);
+                    List<DataBox> leftKeys = keys.subList(0,keys.size()/2);
+                    List<DataBox> rightKeys = keys.subList(keys.size()/2+1,keys.size());
+                    List<Long> leftChildren = children.subList(0,keys.size()/2+1);
+                    List<Long> rightChildren = children.subList(keys.size()/2+1,children.size());
+                    InnerNode rightInnerNode = new InnerNode(metadata,bufferManager,rightKeys,rightChildren,treeContext);
+                    keys = leftKeys;
+                    children = leftChildren;
+                    sync();
+                    return Optional.of(new Pair<>(splitKey,rightInnerNode.page.getPageNum()));
+                }
+            }
+        }
+
+        sync();
         return Optional.empty();
+
+
+
+
     }
 
     // See BPlusNode.remove.
@@ -114,6 +223,19 @@ class InnerNode extends BPlusNode {
     public void remove(DataBox key) {
         // TODO(proj2): implement
 
+        //TODO binary search
+        BPlusNode node = null;
+        for(int i = 0;i<keys.size();i++){
+            int flag = key.compareTo(keys.get(i));
+            if(flag < 0){
+                node = getChild(i);
+                break;
+            }
+        }
+        if(node == null){
+            node = getChild(children.size()-1);
+        }
+        node.remove(key);
         return;
     }
 
